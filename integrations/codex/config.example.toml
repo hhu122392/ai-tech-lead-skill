@@ -1,0 +1,14 @@
+# Copy relevant settings into <repo>/.codex/config.toml or ~/.codex/config.toml.
+
+[features]
+# 某些 Codex 版本需要显式打开多 Agent 能力；若当前版本没有该开关，按实际工具列表为准。
+multi_agent = true
+
+[agents]
+enabled = true
+# 这是总线程上限；Skill 仍限制同时写任务默认不超过 3 个。
+max_concurrent_threads_per_session = 4
+
+# Keep model names environment-specific. Uncomment and set models supported by your account.
+# default_subagent_model = "<fast-or-cost-efficient-model>"
+# default_subagent_reasoning_effort = "medium"
