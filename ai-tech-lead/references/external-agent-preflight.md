@@ -43,7 +43,7 @@ YOLO 只表示减少交互确认，不扩大任务合同的范围，也不批准
 ### Claude Code
 
 - 使用当前版本 `claude --help` 和 [Claude Code CLI 文档](https://docs.anthropic.com/en/docs/claude-code/cli-usage)确认 `--permission-mode` 的实际取值。`--dangerously-skip-permissions` 或生效的 `bypassPermissions` 属于高风险免确认能力，只能在已批准的隔离 worktree／容器中使用；不能因为角色文件里写了 `tools: Bash` 就认为它已生效。
-- thinking／effort 的参数和可用等级随 Claude Code 与模型版本变化。以当前 CLI、会话设置和模型状态为准，记录实际生效值；本 Skill 不硬编码一个可能失效的 `--thinking max` 命令。
+- thinking／effort 的参数和可用等级随 Claude Code 与模型版本变化。以当前 CLI、会话设置和模型状态为准，记录实际生效值；`SKILL.md` 里的能力清单只是带日期的实测快照，照用前必须用当前版本 `--help` 复核，不得直接当成可用参数。
 
 ### Pi
 

@@ -22,6 +22,8 @@
 ai-tech-lead-skill-v1.0.0/
 ├── ai-tech-lead/                 # 可直接安装的 Skill 目录
 │   ├── SKILL.md
+│   ├── README.md                 # 理念、九步工作流与终端派活速览
+│   ├── MEMORY.md                 # 经验沉淀模板（发布版不含真实条目）
 │   ├── references/               # 派工、测试、审查、验收等详细标准
 │   ├── assets/                   # 可复用模板与项目规则片段
 │   ├── examples/                 # 完整示例

@@ -42,6 +42,7 @@ description: Act as an AI technical lead / 技术总监 for complex coding work.
 6. 主 Agent 未查看最终 Diff、未独立运行必要验证，不得宣布完成。
 7. 最终验收对象必须是集成后的最终代码，而不是子 Agent 的临时分支。
 8. 不得为了通过测试而弱化断言、删除测试、吞异常或扩大权限。
+9. 外部 Agent 能不能调用、能不能监控、支持哪些参数，一律先跑 `--help` 或读源码取证；凭记忆断言“做不到”同样算违规。
 
 ## 标准工作流
 
@@ -72,6 +73,49 @@ description: Act as an AI technical lead / 技术总监 for complex coding work.
 2. **最高 thinking 检查**：读取该 Agent 和当前模型实际支持的推理等级，选择并记录可用的最高挡位及运行时生效值。不能把 `max` 当成所有工具的通用参数，也不能把“建议高推理”当成已开启。无法观察生效值或最高可用值时，状态必须为 `BLOCKED`，不得静默降级。
 
 这两项检查对所有外部 Agent 通用；厂商名称只决定如何取证，不改变门槛。默认在隔离 worktree／容器中运行，记录命令、版本、模型、权限证据、thinking 证据、沙箱／网络状态和时间。具体适配规则见 `references/external-agent-preflight.md`。
+
+#### 终端调用与监控（Pi / Claude Code）
+
+调用方式不凭记忆。派活前先跑 `pi --help` / `claude --help`，把实际存在的参数记进 Task Contract。下面是 2026-09-15 在本机实测存在的关键能力，只是带日期的快照，不是版本承诺，照用前必须用当前版本 `--help` 复核：
+
+- Pi：`-p` 非交互执行；`--mode json|rpc` 结构化输出；`--thinking off|minimal|low|medium|high|xhigh|max`；`--tools read,grep,find,ls` 只读白名单；`--session-dir`、`--session-id`、`--no-session`；`--approve` / `--no-approve`；`--list-models [search]`
+- Claude Code：`-p`；`--output-format stream-json`（配 `--include-partial-messages` 得到实时流）；`--bg` / `--background` 配 `claude logs <id>`、`claude agents`、`claude attach <id>`、`claude stop <id>`；`--permission-mode bypassPermissions`；`--effort low|medium|high|xhigh|max`；`--max-budget-usd`；`--json-schema`；`-w` / `--worktree`
+
+**可视化**：外部 Agent 一律在可见终端窗口里运行，用户要能实时看到使用情况。每个写任务一个窗口，窗口标题写任务号。
+
+**窗口形态由用户选，用户说"可视化窗口"时一律按交互式全界面开**：`pwsh -NoExit` 里直接跑 `pi`（不带 `-p`）并给初始任务，窗口里要能看到 Pi 的 banner、已加载 extensions、工具调用和底部状态栏。这是用户实际盯的形态。`pi -p` 的非交互窗口只有文字流、没有界面，跑完之前还可能空白，只能当后台取证用，不能当"可视化窗口"交付。
+
+```powershell
+Start-Process pwsh -ArgumentList '-NoExit','-NoProfile','-Command',
+  "pi --session-id <任务号> '@t/<任务号>-kickoff.txt'"
+  -WorkingDirectory <repo root>
+```
+
+初始任务写进 kickoff 文件（`@t/...` 引用），这样任务一进窗口就开始跑，用户能看着它读文件、调工具。
+
+**后台取证模板（Windows）**：需要无人值守跑一轮并拿日志时用下面这种写法（非交互，只有文字流）。不要用 `powershell.exe` 写 `-NoExit` 加裸管道，那种写法在 Pi 非交互跑完之前窗口是空白的，用户会以为没派活。用 `pwsh`，并在子进程里把管道编码锁成 UTF-8：
+
+```powershell
+Start-Process pwsh -ArgumentList '-NoExit','-NoProfile','-Command',
+  "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $OutputEncoding=[Text.Encoding]::UTF8; Write-Host 'TASK T7 / model ...'; pi -p --no-session '@t/task7-prompt.txt' 2>&1 | Tee-Object -FilePath 't/task7.log'"
+  -WorkingDirectory <repo root>
+```
+
+**留痕**：启动命令必须在窗口里同时把输出写进日志文件。主 Agent 读日志做监控和取证；窗口关闭后，日志就是唯一证据。
+
+**用户看不到进度时不要辩解**：Pi 的 `-p` 只在整轮结束时吐一次最终输出，`Tee-Object` 还会缓冲，所以运行中窗口本来就可能长时间空白。派活时要当场说清"这轮几分钟内不会刷屏，跑完一次性出结果"，别让空白窗口变成"你没派活"的证据。要真正的过程可见，就用交互式 TUI 窗口由用户直接输入任务，或让 Agent 用 `--mode json` 写事件流日志。
+
+**关窗**：执行进程已退出并拿到退出码、且主 Agent 完成验收，两个条件都满足才关闭窗口；关闭前确认日志已落盘、已成功解码成可读文本。
+
+**日志编码**：Windows 上日志乱码是常态。写盘用 UTF-8；读回来先按 UTF-8 解，出现 `锟斤拷`／`钀` 一类乱码就按 GBK 再解一次，仍乱码就用 `Get-Content -Encoding Unicode`。解码不成功不得当作"没有输出"。
+
+**窗口被外部关闭**：不得当作任务成功或失败，必须标记 `TIMED_OUT`／`CANCELLED` 并检查半成品 diff。只关闭主 Agent 自己启动的窗口。
+
+**证据口径**：窗口里“看到了”不是证据；证据是日志文件、退出码和仓库真实状态。
+
+**监控**：交互式窗口里派的活，用两个信号判断进展——会话文件 `~/.pi/agent/sessions/<项目目录>/<时间戳>_<会话号>.jsonl` 最后一条记录的时间戳（有没有在动，以及最后是 `toolCall` 还是 `toolResult`）、`git status --porcelain` 的文件计数（实现走到哪一步）。不要靠盯 TUI 画面，也不要等它的最终回答才判断状态。执行者长时间只读不改是正常的探索阶段；同一条命令反复失败才是异常，那时再决定要不要介入。
+
+**新目录先授权**：Pi 在没被信任过的目录里启动交互式界面时会停在授权确认上等按键，进程活着、会话目录建了但一个字节都不写。派活前把目录加进 `~/.pi/agent/trust.json`（`{"<绝对路径>": true}`），或启动时带 `--approve`；否则窗口会白等，主 Agent 会误判成"卡住"。新建 worktree 后这一步是必做项。
 
 ### 2. 定义完成标准
 
@@ -136,6 +180,7 @@ description: Act as an AI technical lead / 技术总监 for complex coding work.
 - 同一 Prompt 重试失败时，不得机械重跑；应缩小范围、补充事实、调整模型或由主 Agent接管。
 - 共享工作区存在未提交改动且无法建立安全快照或独立 worktree 时，不得派写任务。
 - Agent 崩溃、超时或中断后，先标记 `TIMED_OUT`／`CANCELLED` 并检查半成品 diff，不得直接复用未知状态工作区。
+- 每个写任务一个可见窗口，最多三个写窗口并行；开窗、留痕、关窗按“终端调用与监控”执行。
 
 ### 7. 检查交付，不接受口头完成
 
@@ -189,6 +234,18 @@ description: Act as an AI technical lead / 技术总监 for complex coding work.
 - 对实质性编码工作，默认把边界清晰的实现交给执行 Agent，主 Agent保留设计、关键代码、集成和验收。
 - 对鉴权、支付、账务、数据迁移、权限、并发一致性、公共 API、生产事故和不可逆操作，主 Agent必须亲自掌控方案和关键路径；执行 Agent只能承担已完全定义的局部工作。
 
+## 经验沉淀（Memory）
+
+`MEMORY.md` 记录本 Skill 跑真实任务时踩过的坑、被推翻的判断和验证过的做法。
+
+- 开工前读一遍，避免重复踩坑。
+- 收工时按模板把本次新踩的坑追加进去；一条一事，必须带证据（命令、输出、文件路径或行号）。
+- 能改规则的就直接改本文件或 `references/`，然后把条目标成 `已入规` 并写上改动位置；没定论的留 `待入规`。
+- 新结论推翻旧结论时改旧条目并标注修订日期，不允许两条矛盾结论并存。
+- 不写没有证据的猜测，不写密钥、令牌和个人隐私。
+
+跑任务 → 沉淀 → 改规则 → 再跑。这是本 Skill 迭代的唯一回路。
+
 ## 最终完成检查
 
 在向用户宣布完成前，逐项确认：
@@ -204,6 +261,8 @@ description: Act as an AI technical lead / 技术总监 for complex coding work.
 - [ ] 未验证项、环境限制和残余风险已明确披露
 - [ ] 可说明变更范围和回滚方法
 - [ ] 仓库内容已按信任边界处理，未因不可信内容扩大权限或范围
+- [ ] 外部 Agent 窗口日志已留存，已完成任务的窗口已关闭
 - [ ] R3 任务的人工批准、操作记录和回滚证据已留存
+- [ ] 本次新踩的坑已按模板写进 `MEMORY.md`
 
 **你可以下放编码，但不能下放判断、验收与责任。**
